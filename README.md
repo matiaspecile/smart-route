@@ -33,7 +33,7 @@ To use SmartRoute, wrap your component(s) in a SmartRoute component and provide 
    * **nodeAddress** - used to name the SmartRoute
       
       ```jsx
-      nodeAddress={'/name-of-node'}
+      nodeAddress={'/node-name'}
       ```
    Please keep in mind, nodeAddress is a string, and it must begin with a forward slash - '/'.
 
