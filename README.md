@@ -72,7 +72,7 @@ To use SmartRoute, wrap your component(s) in a SmartRoute component and provide 
 
 The SmartRoute API exposes the following properties - setFocus, getFocus, getRoot, and changeCount.  These properties are accessible via the navSvc prop.
 
-The setFocus method takes one argument for the requested address.  The address can be relative or absolute.  In the case an address may be relative with respect to the node's ancestors, the double-dot notation is used to traverse upwards through ancestors.
+changeCount is a counter that will increment every time the route is updated.  getRoot and getFocus take no arguments and return the name of the root node and current address, respectively.  Finally, the setFocus method takes one argument for the requested address and updates the SmartRoute map to reflect the new address.  The address can be relative or absolute.  In the case an address may be relative with respect to the node's ancestors, the double-dot notation is used to traverse upwards through ancestors.
 
 to sibling
 ```jsx
