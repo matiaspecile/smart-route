@@ -2,10 +2,11 @@
 
 react.js route-enabled component
 
-copyright UXIP
+Copyright (c) 2017 UXIP
 
 Open source is for educational purposes only.  Commercial use is strictly prohibited.
 
+## Summary
 
 SmartRoute is a React component that wraps existing components to route-enable them, allowing your routing semantics to live organically within your React app.
 
