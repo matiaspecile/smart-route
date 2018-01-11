@@ -44,7 +44,7 @@ To use SmartRoute, wrap your component(s) in a SmartRoute component and provide 
    <SmartRoute>
    ```
    
-#### 2. SmartRoute Descendants
+#### 2. Descendant SmartRoutes
 
    For all SmartRoute descendants, the following props are required:
 
@@ -90,11 +90,11 @@ or down to grandchild
 ```jsx
 this.props.navSvc.setFocus('/child/grandchild');
 ```
-or absolute
-```jsx
-this.props.navSvc.setFocus('/app/distant-ancestor/lost-cousin');
-```
 or to the root
 ```jsx
 this.props.navSvc.setFocus('./');
+```
+or absolute
+```jsx
+this.props.navSvc.setFocus('/app/distant-ancestor/lost-cousin');
 ```
