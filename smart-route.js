@@ -1,392 +1,314 @@
-/* Copyright (c) 2017 UXIP */
+import React, { useEffect, useRef, useState } from 'react'
 
-class SmartRoute extends React.Component {
-    constructor(props) {
-        super(props);
+import { getAddressArray } from './utilities/get-address-array'
+import { getAddressFromArray } from './utilities/get-address-from-array'
+import { getAncestorNodeAddress } from './utilities/get-ancestor-node-address'
+import { getCurrentNodeAddress } from './utilities/get-current-node-address'
+import { getNodeAddress } from './utilities/get-node-address'
+import { getParentNodeAddress } from './utilities/get-parent-node-address'
+import { getRelativeAddress } from './utilities/get-relative-address'
+import { getRootNodeAddress } from './utilities/get-root-node-address'
+import { getVariableAddressKey } from './utilities/get-variable-address-key'
+import { isVariableAddress } from './utilities/is-variable-address'
+import { removeLeadingSlash } from './utilities/remove-leading-slash'
+import { removeTrailingSlash } from './utilities/remove-trailing-slash'
+import { shouldRouteActivate } from './utilities/should-route-activate'
 
-        this.getRoot = this.getRoot.bind(this);
-        this.getFocus = this.getFocus.bind(this);
-        this.setFocus = this.setFocus.bind(this);
-        this._setTargetAddress = this._setTargetAddress.bind(this);
-        this._handlePopstate = this._handlePopstate.bind(this);
-        this._bindAllElements = this._bindAllElements.bind(this);
-        this._unbindAllElements = this._unbindAllElements.bind(this);
+const useComponentWillMount = (callback) => {
+  const mounted = useRef(false);
 
-        this._isMounted = false;
-        this._intervalId = '';
-
-        this.state = ({
-            targetAddress: '',
-            isActive: false,
-            isHandling: false,
-            changeCount: 0
-        });
+  useEffect(() => {
+    if (mounted.current) {
+      return;
     }
 
-    static get defaultProps() {
-        return ({
-            nodeAddress: '',
-            navSvc: {
-                _index: 0
-            }
-        });
+    callback();
+
+    mounted.current = true
+  }, []);
+};
+
+
+function SmartRoute(props) {
+  const {
+    children,
+    defaultChild,
+    navSvc = { _index: 0 },
+    nodeAddress = '',
+    onMount,
+    onNavSvcInit,
+    ...restProps
+  } = props;
+
+  const [changeCount, setChangeCount] = useState(0);
+  const [isActive, setIsActive] = useState(false);
+  const [isHandling, setIsHandling] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
+  const [targetAddress, setTargetAddress] = useState('');
+  const [variableKey, setVariableKey] = useState('');
+  let _timeoutId;
+
+  function initializeSmartRoute() {
+    const nodeIndex = navSvc._index;
+    const adjacentIndex = (navSvc._rootAddress === '') ? nodeIndex - 1 : nodeIndex; // todo check if ever nodeIndex
+
+    if (nodeIndex > 0 && shouldRouteActivate(navSvc._targetAddress, adjacentIndex, nodeAddress)) {
+      setIsActive(true);
+    } else if (nodeIndex === 0) {
+      setIsActive(true);
+      const pathname = window?.location.pathname;
+      setTargetAddress((pathname !== '/') ? removeTrailingSlash(pathname) : nodeAddress);
+    }
+  };
+
+  useComponentWillMount(() => initializeSmartRoute());
+
+  useEffect(() => {
+    const nodeIndex = navSvc._index;
+
+    if (nodeIndex === 0) {
+      _bindAllElements();
+
+      onNavSvcInit && onNavSvcInit({
+        _index: navSvc._index - 1,
+        _rootAddress: nodeAddress,
+        _targetAddress: targetAddress,
+        _setTargetAddress: _setTargetAddress,
+        changeCount: changeCount,
+        setFocus: setFocus,
+        getFocus: getFocus,
+        getSelf: getSelf,
+        getRoot: getRoot
+      });
+    } else if (defaultChild && nodeIndex === getAddressArray(navSvc._targetAddress).length - 1) {
+      setFocus(defaultChild);
     }
 
-    componentWillMount() {
-        var props = this.props;
+    setIsMounted(true);
+  }, []);
 
-        var nodeAddress = props.nodeAddress;
-        var navSvc = props.navSvc
-        var nodeIndex = navSvc._index;
-        var adjIndex = (navSvc._rootAddress === '') ? nodeIndex - 1 : nodeIndex;
+  useEffect(() => {
+    if (!nodeAddress) {
+      return;
+    }
+    setVariableKey(isVariableAddress(nodeAddress) ? getVariableAddressKey(nodeAddress) : '');
+  }, [nodeAddress]);
 
-        if (nodeIndex !== 0 && SmartRoute._shouldRouteActivate(navSvc._targetAddress, adjIndex, nodeAddress)) {
-            this.setState({
-                isActive: true
-            });
-        } else if (nodeIndex === 0) {
-            this.setState({
-                isActive: true,
-                targetAddress: props.initAddress || (!!window && window.location.pathname !== '/') ? Se.SmartRoute.removeTrailingSlash(window.location.pathname) : nodeAddress
-            });
+  useEffect(() => {
+    const nextTarget = navSvc._targetAddress;
+    const nodeIndex = navSvc._index;
+
+    if (nextTarget == null) {
+      return;
+    }
+
+    if (nodeIndex === getAddressArray(nextTarget).length - 1 && !!defaultChild) {
+      setFocus(defaultChild);
+    } else {
+      const adjIndex = (navSvc._rootAddress === '') ? nodeIndex - 1 : nodeIndex;
+      setIsActive(shouldRouteActivate(nextTarget, adjIndex, nodeAddress));
+    }
+  }, [navSvc, nodeAddress]);
+
+  useEffect(() => {
+    if (isActive && navSvc._targetAddress !== targetAddress && !!onFocusChange) {
+      onFocusChange(navSvc._targetAddress || targetAddress);
+    }
+
+    return () => {
+      const nodeIndex = navSvc._index;
+
+      if (!!window && nodeIndex === 0) {
+        _unbindAllElements();
+      }
+
+      clearTimeout(_timeoutId);
+
+      setIsMounted(false);
+    }
+  }, []);
+
+
+  function getRoot() {
+    return navSvc._rootAddress || nodeAddress;
+  };
+
+  function getSelf() {
+    const navSvc = navSvc;
+    const targetAddressArr = getAddressArray(navSvc._targetAddress || targetAddress);
+    const index = (!navSvc._rootAddress) ? navSvc._index - 1 : navSvc._index;
+    index -= (nodeAddress === '.') ? 1 : 0;
+
+    return targetAddressArr[index];
+  };
+
+  function getFocus() {
+    return navSvc._targetAddress || targetAddress;
+  };
+
+  function setFocus(reqAddress, isPopState) {
+    reqAddress = (reqAddress === '/') ? './' : reqAddress;
+
+    //const navSvc = navSvc || {};
+    const nodeIndex = navSvc?._index;
+    const rootAddress = (nodeIndex > 0) ? navSvc._rootAddress : nodeAddress;
+    let targetAddress = navSvc?._targetAddress || targetAddress;
+
+    const hashIndex = targetAddress?.indexOf('#');
+    targetAddress = (hashIndex < 0) ? targetAddress : targetAddress?.substring(0, hashIndex);
+
+    const nextAddress = (() => {
+      let targetAddrArr = (!targetAddress) ? [] : getAddressArray(targetAddress);
+
+      if (rootAddress === getAddressArray(reqAddress)[0]) {                               // returns reqAddress as nextAddress if address is absolute
+        return reqAddress;
+      } else if (reqAddress === './') {                                                   // returns root node
+        return rootAddress;
+      }
+
+      const adjIndex = (rootAddress === '') ? nodeIndex - 1 : nodeIndex;
+      for (let i = targetAddrArr.length - 1; i > adjIndex; i--) {                         // aligns address to position of node requesting new focus
+        targetAddrArr.pop();
+      }
+
+      if (!reqAddress) {
+        return reqAddress;
+      } else if (reqAddress.substring(0, 2) === '..') {                                   // parses relative-to-ancestor focus
+        let navAddress = '/' + reqAddress;
+        for (let i = 0; i < reqAddress.length; i += 3) {
+          if (reqAddress.substring(i, i + 2) !== '..') {
+            break;
+          } else {
+            targetAddrArr.pop();
+            navAddress = navAddress.substring(3);
+          }
         }
-    }
+        return getAddressFromArray(targetAddrArr) + navAddress;
+      } else if (reqAddress[0] === '.') {                                                 // parses self focus
+        return getAddressFromArray(targetAddrArr);
+      } else if (reqAddress[0] !== '/') {                                                 // parses relative-to-self focus
+        targetAddrArr.pop();
+        return getAddressFromArray(targetAddrArr) + '/' + reqAddress;
+      } else {                                                                            // parses relative-to-descendant focus
+        return getAddressFromArray(targetAddrArr) + reqAddress;
+      }
+    })();
 
-    componentDidMount() {
-        var props = this.props;
-        var navSvc = props.navSvc;
-        var nodeIndex = navSvc._index;
 
-        if (!!window && nodeIndex === 0) {
-            this._bindAllElements();
-            
-            var targetAddress = this.state.targetAddress;
-            window.history.pushState(SmartRoute.getAddressArray(targetAddress),
-                                     SmartRoute.getRelativeAddress(targetAddress),
-                                     window.location.origin + targetAddress);
-        } else if (nodeIndex === SmartRoute.getAddressArray(navSvc._targetAddress).length - 1 && !!props.defaultChild) {
-            this.setFocus(props.defaultChild);
-        }
-
-        this._isMounted = true;
-
-        if (this.state.isActive) {
-            UXIP.smartRoute.isAnonymous = (props.navSvc._index !== 0) ? props.isAnonymous : true;
-        }
-    }
-
-    componentWillReceiveProps(nextProps) {
-        var props = this.props;
-        var nodeAddress = nextProps.nodeAddress;
-
-        var navSvc = nextProps.navSvc;
-        var nextTarget = navSvc._targetAddress;
-        var nodeIndex = navSvc._index;
-
-        if (nextTarget != null && nextTarget !== this.props.navSvc._targetAddress) {
-            if (nodeIndex === SmartRoute.getAddressArray(nextTarget).length - 1 && !!nextProps.defaultChild) {
-                this.setFocus(nextProps.defaultChild);
-            } else {
-                var adjIndex = (navSvc._rootAddress === '') ? nodeIndex - 1 : nodeIndex;
-                this.setState({
-                    isActive: SmartRoute._shouldRouteActivate(nextTarget, adjIndex, nodeAddress)
-                });
-            }
-        }
-    }
-
-    componentDidUpdate(prevProps, prevState) {
-        var state = this.state;
-
-        if ('isHandling' in state &&                                                            // fix to avoid premature handling of 
-            state.isHandling &&                                                                 // focus change
-            state.isHandling === prevState.isHandling) {
-            this.props.onFocusChange();
-
-            this.setState({
-                isHandling: false
-            });
-        }
-    }
-
-    componentWillUnmount() {
-        var nodeIndex = this.props.navSvc._index;
-
-        if (!!window && nodeIndex === 0) {
-            this._unbindAllElements();
-        }
-
-        clearTimeout(this._timeoutId);
-
-        this._isMounted = false;
-    }
-
-    getRoot() {
-        var props = this.props;
-        return props.navSvc._rootAddress || props.nodeAddress;
-    }
-
-    getFocus() {
-        var props = this.props;
-        return props.navSvc._targetAddress || this.state.targetAddress;
-    }
-
-    setFocus(reqAddress) {
-        var props = this.props;
-        var state = this.state;
-        var navSvc = props.navSvc;
-        var nodeIndex = navSvc._index;
-        var rootAddress = (nodeIndex > 0) ? navSvc._rootAddress : props.nodeAddress;
-        var targetAddress = navSvc._targetAddress || state.targetAddress;
-
-        var nextAddress = (() => {
-            var targetAddrArr = SmartRoute.getAddressArray(targetAddress);
-
-            if (rootAddress === SmartRoute.getAddressArray(reqAddress)[0]) {                    // returns reqAddress as nextAddress if address is absolute
-                return reqAddress;
-            } else if (reqAddress === './') {                                                   // returns root node
-                return rootAddress;
-            }
-
-            var adjIndex = (rootAddress === '') ? nodeIndex - 1 : nodeIndex;
-            for (var i = targetAddrArr.length - 1; i > adjIndex; i--) {                         // aligns address to position of node requesting new focus
-                targetAddrArr.pop();
-            }
-
-            if (reqAddress.substring(0, 2) === '..') {                                          // parses relative-to-ancestor focus
-                var navAddress = '/' + reqAddress;
-                for (var i = 0; i < reqAddress.length; i += 3) {
-                    if (reqAddress.substring(i, i + 2) !== '..') {
-                        break;
-                    } else {
-                        targetAddrArr.pop();
-                        navAddress = navAddress.substring(3);
-                    }
-                }
-                return SmartRoute.getAddressFromArray(targetAddrArr) + navAddress;
-            } else if (reqAddress[0] === '.') {                                                 // parses self focus
-                return SmartRoute.getAddressFromArray(targetAddrArr);
-            } else if (reqAddress[0] !== '/') {                                                 // parses relative-to-self focus
-                targetAddrArr.pop();
-                return SmartRoute.getAddressFromArray(targetAddrArr) + '/' + reqAddress;
-            } else {                                                                            // parses relative-to-descendant focus
-                return SmartRoute.getAddressFromArray(targetAddrArr) + reqAddress;
-            }
-        })();
-
-        var addrChanged = false;
-        if (nodeIndex !== 0) {
-            addrChanged = navSvc._setTargetAddress(nextAddress);
-        } else {
-            if (nextAddress === targetAddress) {                                                // escapes address change when already at root
-                //props.onFocusChange();
-                return addrChanged;
-            }
-            addrChanged = this._setTargetAddress(nextAddress);
-        }
-
+    let addrChanged = false;
+    if (nodeIndex !== 0) {
+      addrChanged = navSvc._setTargetAddress(nextAddress, isPopState);
+    } else {
+      if (nextAddress === targetAddress) {                                                // escapes address change when already at root
         return addrChanged;
+      }
+      addrChanged = _setTargetAddress(nextAddress, isPopState);
     }
 
-    _setTargetAddress(targetAddress, isFromPopState) {
-        if (!this._isMounted) {                                                                 // _setTargetAddress may be called before root is mounted, so
-            this._timeoutId = setTimeout(() => {                                                // it awaits for root to mount before setting a new target
-                this._setTargetAddress(targetAddress, isFromPopState);
-            }, 200);
-            return;
-        }
+    return addrChanged;
+  };
 
-        var state = this.state;
-
-        if (state.targetAddress === targetAddress) {                                            // route change is aborted if the route is the same
-            return false;
-        }
-
-        if (!!window && !isFromPopState) {
-            window.history.pushState(SmartRoute.getAddressArray(targetAddress),
-                                     SmartRoute.getRelativeAddress(targetAddress),
-                                     window.location.origin + targetAddress);
-        }
-
-        this.setState({
-            targetAddress: targetAddress,
-            isHandling: true,
-            changeCount: state.changeCount + 1
-        });
-
-        return true;
+  function _setTargetAddress(_targetAddress, isPopState) {
+    if (!isMounted) {                                                                 // _setTargetAddress may be called before root is mounted, so
+      _timeoutId = setTimeout((_targetAddress, isPopState) => {                       // it awaits for root to mount before setting a new target
+        _setTargetAddress(_targetAddress, isPopState);
+      }, 100, _targetAddress, isPopState);
+      return;
+    }
+    if (targetAddress === _targetAddress) {                                            // route change is aborted if the route is the same
+      return false;
     }
 
-    _handlePopstate(e) {
-        var targetAddress = window.location.pathname;
-        this._setTargetAddress(targetAddress, true);
+    const targetAddressArr = getAddressArray(_targetAddress);
+    const relativeAddress = getRelativeAddress(_targetAddress);
+
+    window && !isPopState &&
+      window.history.pushState(
+        targetAddressArr,
+        relativeAddress,
+        window.location.origin + _targetAddress + window.location.search);
+
+    setTargetAddress(_targetAddress);
+    setIsHandling(true);
+    setChangeCount(changeCount + 1);
+
+    return true;
+  };
+
+  function _handlePopstate(e) {
+    const pathname = window.location.pathname;
+    const _targetAddress = (pathname === '/') ? '' : pathname;
+    _setTargetAddress(_targetAddress, true);
+  };
+
+  function _handleLayerClick(e) {
+    let target = e.target || e.srcElement;
+    if (target.tagName !== 'A') {
+      return;
     }
 
-    _bindAllElements() {
-        window.addEventListener("popstate", this._handlePopstate);
+    setFocus(target.href);
+  };
+
+  function _bindAllElements() {
+    window.addEventListener('popstate', _handlePopstate);
+  };
+
+  function _unbindAllElements() {
+    window.removeEventListener('popstate', _handlePopstate);
+  };
+
+  if (!isActive) {
+    return null;
+  }
+
+  const childrenWithProps = React.Children.map(children, child => {
+    if (!child) {
+      return;
     }
 
-    _unbindAllElements() {
-        window.removeEventListener("popstate", this._handlePopstate);
+    const nextProps = {};
+
+    const childProps = child.props;
+    for (let i = 0, keys = Object.keys(childProps); i < keys.length; i++) {
+      const key = keys[i];
+      nextProps[key] = childProps[key];
     }
 
-    render() {
-        var props = this.props;
-        var state = this.state;
-
-        if (!state.isActive && !props.inGrid) {
-            return null;
-        }
-
-        var navSvc = props.navSvc;
-
-        var childrenWithProps = React.Children.map(props.children, (child) => {
-            var elementProps = {};
-
-            var childProps = child.props;
-            for (var key in childProps) {
-                if (childProps.hasOwnProperty(key)) {
-                    elementProps[key] = childProps[key];
-                }
-            }
-
-            for (var key in props) {
-                if (props.hasOwnProperty(key) &&
-                    key !== 'children' &&
-                    key !== 'defaultChild' &&
-                    key !== 'nodeAddress' &&
-                    key !== 'isDebug') {
-                    elementProps[key] = props[key];
-                }
-            }
-
-            var hasRoot, rootAddress, targetAddress, setTargetAddress, changeCount;
-            if (navSvc._index === 0) {
-                rootAddress = props.nodeAddress;
-                targetAddress = state.targetAddress;
-                setTargetAddress = this._setTargetAddress;
-                changeCount = state.changeCount;
-            } else {
-                rootAddress = navSvc._rootAddress;
-                targetAddress = navSvc._targetAddress;
-                setTargetAddress = navSvc._setTargetAddress;
-                changeCount = navSvc.changeCount;
-            }
-
-            elementProps.navSvc = {
-                _index: navSvc._index + 1,
-                _rootAddress: rootAddress,
-                _targetAddress: targetAddress,
-                _setTargetAddress: setTargetAddress,
-                changeCount: changeCount,
-                setFocus: this.setFocus,
-                getFocus: this.getFocus,
-                getRoot: this.getRoot
-            };
-
-            return React.cloneElement(child, elementProps);
-        });
-
-        return React.createElement('div', {className: 'smart-route'}, childrenWithProps);
+    for (let i = 0, keys = Object.keys(restProps); i < keys.length; i++) {
+      const key = keys[i];
+      nextProps[key] = restProps[key];
     }
 
-    static _shouldRouteActivate(target, nodeIndex, nodeAddress) {
-        var targetAddrArr = (!Array.isArray(target)) ? SmartRoute.getAddressArray(target) : target;
-        var targetNode = targetAddrArr[nodeIndex];
-        var lastIndex = targetAddrArr.length - 1;
-        
-        return (nodeAddress === targetNode ||
-                nodeAddress === '.' && (nodeIndex > lastIndex || lastIndex === 0) ||
-                SmartRoute.isVariableAddress(nodeAddress) && nodeIndex <= lastIndex && targetNode !== '/new-item' && targetNode[1] !== '_');
+    let
+      rootAddress = nodeAddress,
+      nextTargetAddress = targetAddress,
+      nextChangeCount = changeCount,
+      targetAddressCb = _setTargetAddress;
+
+    if (navSvc._index > 0) {
+      rootAddress = navSvc._rootAddress;
+      nextTargetAddress = navSvc._targetAddress;
+      nextChangeCount = navSvc.changeCount;
+      targetAddressCb = navSvc._setTargetAddress;
     }
 
-    static isVariableAddress(nodeAddress) {
-        if (!nodeAddress) {
-            return false;
-        }
+    nextProps.navSvc = {
+      _index: navSvc._index + 1,
+      _rootAddress: rootAddress,
+      _targetAddress: targetAddress,
+      _setTargetAddress: targetAddressCb,
+      changeCount: changeCount,
+      setFocus: setFocus,
+      getFocus: getFocus,
+      getSelf: getSelf,
+      getRoot: getRoot
+    };
 
-        var lBracketIndex = nodeAddress.indexOf('{');
-        var rBracketIndex = nodeAddress.indexOf('}');
+    return React.cloneElement(child, nextProps);
+  });
 
-        return lBracketIndex === 1 && rBracketIndex !== -1;                                     // format for variable address is '/{node}', so lBracketIndex 
-    }                                                                                           // will always be at index 1
+  return childrenWithProps;
+};
 
-    static getRelativeAddress(address) {
-        address = SmartRoute.removeTrailingSlash(address);
-
-        return address.substring(address.lastIndexOf('/'));
-    }
-
-    static getParentNodeAddress(address) {
-        return address.substring(0, address.lastIndexOf('/'));
-    }
-
-    static getAncestorNodeAddress(address, index) {
-        var addressArr = SmartRoute.getAddressArray(address);
-
-        return addressArr.slice(index, index + 1)[0];
-    }
-
-    static getRootNodeAddress(address) {
-        if (address.split('/').length - 1 === 1) {
-            return address;
-        }
-
-        return address.substring(0, address.indexOf('/', 1));
-    }
-
-    static getAddressArray(address) {
-        if (address[0] !== '/') {
-            address = '/' + address;
-        }
-
-        var indices = [];
-        for (var i = 0; i < address.length; i++) {
-            if (address[i] === '/')
-                indices.push(i);
-        }
-
-        var arr = [];
-        for (var j = 0; j < indices.length; j++) {
-            if (j + 1 !== indices.length)
-                arr.push(address.substring(indices[j], address.indexOf('/', indices[j] + 1)));
-            else
-                arr.push(address.substring(indices[j]));
-        }
-        return arr;
-    }
-
-    static getAddressFromArray(addressArr) {
-        var address = '';
-        for (var i = 0; i < addressArr.length; i++) {
-            address = address + addressArr[i];
-        }
-        return address;
-    }
-
-    static getCurrentNodeAddress(address, index) {
-        var lastNode = SmartRoute.getAddressArray(address)[index];
-
-        return address.substring(0, address.indexOf(lastNode) + lastNode.length);
-    }
-
-    static getNodeAddress(address, index) {
-        return SmartRoute.getAddressArray(address)[index];
-    }
-
-    static removeLeadingSlash(address) {
-        if (!!address && address[0] === '/') {
-            address = address.substring(1);
-        }
-        return address;
-    }
-
-    static removeTrailingSlash(address) {
-        if (!!address && address.substring(address.length - 1) === '/') {
-            address = address.slice(0, -1);
-        }
-        return address;
-    }
-}
-
-//export default SmartRoute;
+export default SmartRoute;
